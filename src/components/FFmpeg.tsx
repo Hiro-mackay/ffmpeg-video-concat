@@ -62,14 +62,22 @@ const createVideo = async (file: File): Promise<HTMLVideoElement> => {
 
 export const Canvas = memo(() => {
   const [ref, setRef] = useState('');
-
   const [files, setFiles] = useState<Assets[]>([]);
-
   const [err, setErr] = useState<Error>(null);
-
   const [message, setMessage] = useState('');
-
   const [progress, setProgress] = useState(0);
+  const [seconds, setSeconds] = useState(0);
+
+  const dlFn = () => {
+    const element = document.createElement('a');
+    element.setAttribute('href', ref);
+    element.setAttribute('download', ref);
+
+    element.style.display = ' none';
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
 
   const _setProgress = ({ ratio }: { ratio: number }) => {
     setProgress(ratio);
@@ -78,16 +86,16 @@ export const Canvas = memo(() => {
   const ffmpeg = createFFmpeg({
     logger: ({ message }) => {
       inProgress(message, _setProgress);
+      console.log(message);
     },
     progress: ({ ratio }) => {
       const r = `Complete: ${(ratio * 100.0).toFixed(2)}%`;
-      setMessage(r);
     }
   });
 
   const reader = async (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files.item(0);
-    const fileRef = `file ${f.name}`;
+    const fileRef = `file '${f.name}'`;
     const videoElement = await createVideo(f);
 
     const asset = {
@@ -116,21 +124,20 @@ export const Canvas = memo(() => {
         inputPath.push(asset.ref);
       }
 
-      console.log('Concat start');
+      setMessage('Concat start');
 
       const cancat = inputPath.join('\n');
 
-      setMessage(`set: ${cancat}`);
-
       const concatList = new TextEncoder().encode(cancat);
 
-      ffmpeg.FS('writeFile', 'concat_list.txt', concatList);
+      ffmpeg.FS('writeFile', 'concat.txt', concatList);
 
-      await ffmpeg.run('-f', 'concat', '-safe', '0', '-i', 'concat_list.txt', 'output.mp4');
-      const data = ffmpeg.FS('readFile', 'output.mp4');
+      await ffmpeg.run('-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c', 'copy', 'output.MOV');
+      const data = ffmpeg.FS('readFile', 'output.MOV');
       const src = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+
       setRef(src);
-      console.log('Completed concat');
+      setMessage('Completed concat');
     } catch (error) {
       setErr(error);
     }
@@ -143,9 +150,14 @@ export const Canvas = memo(() => {
         <input type="file" onChange={reader} />
         <input type="button" value="Concat" onClick={concat} />
       </div>
+      {ref && (
+        <div>
+          <button onClick={dlFn}>ダウンロード</button>
+        </div>
+      )}
+
       <p style={{ color: 'red' }}>{err?.message}</p>
-      <p>{message}</p>
-      <p>Progress: {(progress * 100).toFixed(0)}%</p>
+      <p>進捗: {(progress * 100).toFixed(0)}%</p>
       <ul>
         {files.map((file) => (
           <li key={file.file.name}>{file.file.name}</li>
